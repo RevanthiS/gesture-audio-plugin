@@ -1,0 +1,15 @@
+{
+    "name": "GestureAudioCapture",
+    "version": "1.0",
+    "manifest_version": 3,
+    "permissions": ["scripting"],
+    "host_permissions": ["<all_urls>"],
+    "action": {
+  "default_title": "Open Gesture Plugin"
+    }
+     ,
+    "background": {
+      "service_worker": "background.js"
+    }
+  }
+  
