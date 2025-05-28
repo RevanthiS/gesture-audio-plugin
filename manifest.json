@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Gesture Audio Capture",
+  "name": "Gesture detection",
   "version": "1.0",
-  "description": "Capture video, audio and detect hand gestures using MediaPipe.",
+  "description": "Capture video, audio and detect hand gestures using Handpose.",
   "permissions": ["activeTab"],
   "host_permissions": ["<all_urls>"],
   "action": {
