@@ -1,18 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Gesture Audio Capture</title>
+  <meta charset="utf-8">
+  <title>Gesture Detection</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h2>Live Camera & Audio</h2>
-  <video id="video" width="320" height="240" autoplay playsinline></video>
-  <canvas id="canvas" width="320" height="240"></canvas>
+  <h1>Hand Gesture Detection </h1>
+  <button id="webcamButton">Enable Webcam</button>
+  <div class="video-container">
+    <video id="webcam" width="320" height="240" autoplay playsinline></video>
+    <canvas id="output_canvas" width="320" height="240"></canvas>
+  </div>
+  <div id="gesture_output">Ready...</div>
+  <div id="hand_count_output">Hands detected: 0</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+  <!-- TensorFlow.js Core and Backends -->
+  <script src="libs\tfjs-core.js"></script>
+  <script src="libs\tfjs-converter.js"></script>
+  <script src="libs\tfjs-backend-webgl.js"></script>
+  <!-- Hand Pose Detection Model -->
+  <script src="libs\hand-pose-detection.js"></script>
+  <!--  main gesture logic -->
   <script src="content.js"></script>
 </body>
 </html>

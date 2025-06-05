@@ -1,18 +1,14 @@
 {
-  "manifest_version": 3,
-  "name": "Gesture detection",
-  "version": "1.0",
-  "description": "Capture video, audio and detect hand gestures using Handpose.",
-  "permissions": ["activeTab"],
-  "host_permissions": ["<all_urls>"],
-  "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icon.png"
+    "name": "GestureAudioCapture",
+    "version": "1.0",
+    "manifest_version": 3,
+    "permissions": ["scripting"],
+    "host_permissions": ["<all_urls>"],
+    "action": {
+  "default_title": " Gesture detection Plugin"
     }
-  },
-  "web_accessible_resources": [{
-    "resources": ["icon.png"],
-    "matches": ["<all_urls>"]
-  }]
-}
+     ,
+    "background": {
+      "service_worker": "background.js"
+    }
+  }
