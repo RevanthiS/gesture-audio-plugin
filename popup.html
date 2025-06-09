@@ -1,27 +1,54 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Gesture Detection</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+ 
+
   <link rel="stylesheet" href="style.css">
+
+  
 </head>
 <body>
-  <h1>Hand Gesture Detection </h1>
-  <button id="webcamButton">Enable Webcam</button>
+  <h1> Hand Gesture Detection</h1>
+
+
+  <div class="controls">
+    <button id="webcamButton">📷 Enable Webcam</button>
+    <button id="startDetectionButton" disabled>▶️ Start Detection</button>
+    <button id="stopDetectionButton" disabled>⏹️ Stop Detection</button>
+    <button id="disableWebcamButton" disabled>🚫 Disable Webcam</button>
+  </div>
+
   <div class="video-container">
     <video id="webcam" width="320" height="240" autoplay playsinline></video>
     <canvas id="output_canvas" width="320" height="240"></canvas>
   </div>
-  <div id="gesture_output">Ready...</div>
-  <div id="hand_count_output">Hands detected: 0</div>
 
-  <!-- TensorFlow.js Core and Backends -->
-  <script src="libs\tfjs-core.js"></script>
-  <script src="libs\tfjs-converter.js"></script>
-  <script src="libs\tfjs-backend-webgl.js"></script>
-  <!-- Hand Pose Detection Model -->
-  <script src="libs\hand-pose-detection.js"></script>
-  <!--  main gesture logic -->
+
+  <div class="output-section">
+    <div class="output-item">
+      <h3>Hands Detected</h3>
+      <div id="hand_count_output">Hands detected: 0</div>
+    </div>
+    <div class="output-item">
+      <h3> Gesture Recognition</h3>
+      <div id="gesture_output">Model Loading...</div>
+     
+    </div>
+  </div>
+
+ 
+  <script src="libs/tfjs-core.js"></script>
+  <script src="libs/tfjs-converter.js"></script>
+  <script src="libs/tfjs-backend-webgl.js"></script>
+
+
+  <script src="libs/hand-pose-detection.js"></script>
+
+  
   <script src="content.js"></script>
 </body>
 </html>
