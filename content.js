@@ -1,54 +1,75 @@
-const webcamElement = document.getElementById('webcam');
-const canvasElement = document.getElementById('output_canvas');
-const ctx = canvasElement.getContext('2d');
-let isDetecting = false;
-
-
-//hand connections for drawing
-const HAND_CONNECTIONS = [
-  [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
-  [0, 5], [5, 6], [6, 7], [7, 8],       // Index
-  [0, 9], [9, 10], [10, 11], [11, 12],  // Middle
-  [0, 13], [13, 14], [14, 15], [15, 16],// Ring
-  [0, 17], [17, 18], [18, 19], [19, 20] // Pinky
-];
-
-const fingerTips = [4, 8, 12, 16, 20];
-const fingerKnuckles = [2, 5, 9, 13, 17];
-const fingerMiddleJoints = [3, 6, 10, 14, 18];
-
-// --- Gesture Logic ---
-
-function calculateDistance(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
+async function setupWebcam() {
+  const video = document.getElementById("webcam");
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    video.srcObject = stream;
+    return new Promise((resolve) => {
+      video.onloadedmetadata = () => resolve(video);
+    });
+  } catch (err) {
+    console.error("Error accessing webcam:", err);
+    document.getElementById("hand_count_output").textContent = "Error accessing webcam";
+    return null;
+  }
 }
 
-function calculateAngle(a, b, c) {
-  const ab = calculateDistance(a, b);
-  const bc = calculateDistance(b, c);
-  const ac = calculateDistance(a, c);
-  return Math.acos((ab * ab + bc * bc - ac * ac) / (2 * ab * bc)) * (180 / Math.PI);
+async function loadHandPoseModel() {
+  try {
+    const model = handPoseDetection.SupportedModels.MediaPipeHands;
+    const detectorConfig = {
+      runtime: "tfjs",
+      modelType: "full",
+    };
+    const detector = await handPoseDetection.createDetector(model, detectorConfig);
+    console.log("Hand pose model loaded successfully");
+    return detector;
+  } catch (err) {
+    console.error("Error loading model:", err);
+    document.getElementById("hand_count_output").textContent = "Error loading model";
+    return null;
+  }
+}
+
+function calculateDistance(p1, p2) {
+  const dist = Math.sqrt(
+    Math.pow(p2.x - p1.x, 2) +
+    Math.pow(p2.y - p1.y, 2) +
+    Math.pow((p2.z || 0) - (p1.z || 0), 2) //used to handel 2d cases in case z is undefined.
+  );
+  return dist;
+}
+
+function calculateAngle(p1, p2, p3) {
+  const vector1 = { x: p1.x - p2.x, y: p1.y - p2.y, z: (p1.z || 0) - (p2.z || 0) };
+  const vector2 = { x: p3.x - p2.x, y: p3.y - p2.y, z: (p3.z || 0) - (p2.z || 0) };
+  const dotProduct = vector1.x * vector2.x + vector1.y * vector2.y + vector1.z * vector2.z;
+  const magnitude1 = Math.sqrt(vector1.x ** 2 + vector1.y ** 2 + vector1.z ** 2);
+  const magnitude2 = Math.sqrt(vector2.x ** 2 + vector2.y ** 2 + vector2.z ** 2);
+  const cosine = dotProduct / (magnitude1 * magnitude2);
+  return (Math.acos(Math.max(-1, Math.min(1, cosine))) * 180) / Math.PI;  //Math.max(-1, Math.min(1, cosine)) ensures the cosine is within valid bounds to avoid errors from floating-point inaccuracies.
 }
 
 function getFingerStates(landmarks) {
-  let fingerStates = [];
-  // Thumb: Check angles at MCP (landmark 2) and IP (landmark 3)
-  const thumbMCPAngle = calculateAngle(landmarks[1], landmarks[2], landmarks[3]);
-  const thumbIPAngle = calculateAngle(landmarks[2], landmarks[3], landmarks[4]);
-  const thumbExtended = thumbMCPAngle > 150 && thumbIPAngle > 150;
-  fingerStates.push(thumbExtended);
-  // Other fingers: Check angles at PIP and DIP joints
-  for (let i = 1; i < 5; i++) {
-    const baseIdx = [0, 5, 9, 13, 17][i]; // MCP
-    const pipIdx = [0, 6, 10, 14, 18][i]; // PIP
-    const dipIdx = [0, 7, 11, 15, 19][i]; // DIP
-    const tipIdx = [0, 8, 12, 16, 20][i]; // Tip
-    const pipAngle = calculateAngle(landmarks[baseIdx], landmarks[pipIdx], landmarks[dipIdx]);
-    const dipAngle = calculateAngle(landmarks[pipIdx], landmarks[dipIdx], landmarks[tipIdx]);
-    const fingerExtended = pipAngle > 150 && dipAngle > 150;
-    fingerStates.push(fingerExtended);
-  }
-  return fingerStates;
+  const wrist = landmarks[0];
+  const thumbTip = landmarks[4], indexTip = landmarks[8], middleTip = landmarks[12], ringTip = landmarks[16], pinkyTip = landmarks[20];
+  const thumbBase = landmarks[2], indexBase = landmarks[5], middleBase = landmarks[9], ringBase = landmarks[13], pinkyBase = landmarks[17];
+
+  const threshold = 10;
+  const thumbExtended = calculateDistance(thumbTip, wrist) > calculateDistance(thumbBase, wrist) + threshold;
+  const indexExtended = calculateDistance(indexTip, wrist) > calculateDistance(indexBase, wrist) + threshold;
+  const middleExtended = calculateDistance(middleTip, wrist) > calculateDistance(middleBase, wrist) + threshold;
+  const ringExtended = calculateDistance(ringTip, wrist) > calculateDistance(ringBase, wrist) + threshold;
+  const pinkyExtended = calculateDistance(pinkyTip, wrist) > calculateDistance(pinkyBase, wrist) + threshold;
+
+  console.log("Finger States:", {
+    thumb: thumbExtended,
+    index: indexExtended,
+    middle: middleExtended,
+    ring: ringExtended,
+    pinky: pinkyExtended
+  });
+
+  return [thumbExtended, indexExtended, middleExtended, ringExtended, pinkyExtended];
 }
 
 function classifySingleHandGesture(landmarks) {
@@ -56,221 +77,266 @@ function classifySingleHandGesture(landmarks) {
   const fingerStates = getFingerStates(landmarks);
   const [thumb, index, middle, ring, pinky] = fingerStates;
   const wrist = landmarks[0], thumbTip = landmarks[4], indexTip = landmarks[8], middleTip = landmarks[12], ringTip = landmarks[16], pinkyTip = landmarks[20];
-  // Thumbs Up
+
+  console.log("Gesture Debug:", {
+    thumbTipY: thumbTip.y,
+    wristY: wrist.y,
+    yDiff: thumbTip.y - wrist.y,
+    thumbAngle: calculateAngle(landmarks[2], landmarks[3], landmarks[4]),
+    thumbIndexDist: calculateDistance(thumbTip, indexTip),
+    indexMiddleDist: calculateDistance(indexTip, middleTip),
+    middleRingDist: calculateDistance(middleTip, ringTip),
+    wristX: wrist.x
+  });
+
   if (thumb && !index && !middle && !ring && !pinky) {
     const thumbAngle = calculateAngle(landmarks[2], landmarks[3], landmarks[4]);
-    if (thumbAngle > 150 && thumbTip.y < wrist.y - 0.05) {
-      return { gesture: '👍 Thumbs Up', confidence: 0.9 };
+    if (thumbAngle > 120 && thumbTip.y < wrist.y - 10) {
+      return { gesture: '👍 Thumbs Up'};
     }
   }
-  // Thumbs Down
   if (thumb && !index && !middle && !ring && !pinky) {
-    if (thumbTip.y > wrist.y + 0.05) {
-      return { gesture: '👎 Thumbs Down', confidence: 0.85 };
+    if (thumbTip.y > wrist.y + 10) {
+      return { gesture: '👎 Thumbs Down'};
     }
   }
-  // FIST: All fingers (except possibly thumb) not extended
   if (!index && !middle && !ring && !pinky) {
-    return { gesture: '✊ Fist', confidence: 0.95 };
+    return { gesture: '✊ Fist' };
   }
-  // OK SIGN: Thumb and index tips close, other fingers extended
   const thumbIndexDist = calculateDistance(thumbTip, indexTip);
-  if (thumbIndexDist < 20 && middle && ring && pinky) {
-    return { gesture: '👌 OK Sign', confidence: 0.9 };
+  if (thumbIndexDist < 15 && middle && ring && pinky) {
+    return { gesture: '👌 OK Sign'};
   }
-  // Open Palm
   if (thumb && index && middle && ring && pinky) {
     const indexMiddleDistance = calculateDistance(indexTip, middleTip);
     const middleRingDistance = calculateDistance(middleTip, ringTip);
     const avgDistance = (indexMiddleDistance + middleRingDistance) / 2;
-    if (avgDistance > 0.03) {
-      return { gesture: '🖐️ Open Palm', confidence: 0.9 };
+    if (avgDistance > 20) {
+      return { gesture: '🖐️ Open Palm' };
     }
   }
-  // Peace Sign
   if (index && middle && !ring && !pinky) {
-    const indexStraight = indexTip.y < landmarks[6].y - 0.02;
-    const middleStraight = middleTip.y < landmarks[10].y - 0.02;
+    const indexStraight = indexTip.y < landmarks[6].y - 10;
+    const middleStraight = middleTip.y < landmarks[10].y - 10;
     const bothPointingUp = indexTip.y < wrist.y && middleTip.y < wrist.y;
     const fingerSeparation = calculateDistance(indexTip, middleTip);
-    if (indexStraight && middleStraight && bothPointingUp && fingerSeparation > 0.03) {
-      return { gesture: '✌️ Peace Sign', confidence: 0.9 };
+    if (indexStraight && middleStraight && bothPointingUp && fingerSeparation > 20) {
+      return { gesture: '✌️ Peace Sign'};
     }
   }
-  // Pointing Up
   if (index && !middle && !ring && !pinky) {
-    const indexStraight = indexTip.y < landmarks[6].y - 0.02;
-    const pointingUp = indexTip.y < landmarks[5].y - 0.05;
-    const aboveWrist = indexTip.y < wrist.y - 0.03;
+    const indexStraight = indexTip.y < landmarks[6].y - 10;
+    const pointingUp = indexTip.y < landmarks[5].y - 15;
+    const aboveWrist = indexTip.y < wrist.y - 15;
     if (indexStraight && pointingUp && aboveWrist) {
-      return { gesture: '☝️ Pointing Up', confidence: 0.9 };
+      return { gesture: '☝️ Pointing Up' };
     }
   }
-  // Default
   const extendedCount = fingerStates.filter(Boolean).length;
-  if (extendedCount === 0) return { gesture: 'Closed Hand', confidence: 0.7 };
-  if (extendedCount === 5) return { gesture: 'Open Hand', confidence: 0.7 };
-  return { gesture: 'Unknown', confidence: 0.5 };
+  if (extendedCount === 0) return { gesture: 'Closed Hand'};
+  if (extendedCount === 5) return { gesture: 'Open Hand' };
+  return { gesture: 'Unknown' };
 }
 
-function classifyTwoHandGesture(hands) {
-  if (hands.length !== 2) return null;
-  const left = hands[0].keypoints, right = hands[1].keypoints;
-  const wristDist = calculateDistance(left[0], right[0]);
-  const tipDist = calculateDistance(left[12], right[12]);
-  // Praying Hands: Both hands open, wrists and middle tips close
-  const leftStates = getFingerStates(left);
-  const rightStates = getFingerStates(right);
-  const leftOpen = leftStates.every(state => state); // All fingers extended
-  const rightOpen = rightStates.every(state => state);
-  if (leftOpen && rightOpen && wristDist < 50 && tipDist < 40) {
-    return { gesture: '🙏 Praying Hands', confidence: 0.9 };
+function drawKeypoints(ctx, keypoints, handedness) {
+  ctx.fillStyle = handedness === "Left" ? "blue" : "red";
+  ctx.strokeStyle = handedness === "Left" ? "blue" : "red";
+  ctx.lineWidth = 2;
+
+  for (const keypoint of keypoints) {
+    ctx.beginPath();
+    ctx.arc(keypoint.x, keypoint.y, 3, 0, 2 * Math.PI);
+    ctx.fill();
   }
-  return { gesture: 'Two Hands Detected', confidence: 0.6 };
+
+  const connections = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [0, 9], [9, 10], [10, 11], [11, 12],
+    [0, 13], [13, 14], [14, 15], [15, 16],
+    [0, 17], [17, 18], [18, 19], [19, 20]
+  ];
+
+  ctx.beginPath();
+  for (const [start, end] of connections) {
+    ctx.moveTo(keypoints[start].x, keypoints[start].y);
+    ctx.lineTo(keypoints[end].x, keypoints[end].y);
+  }
+  ctx.stroke();
+
+  if (keypoints.length > 0) {
+    ctx.font = "12px Arial";
+    ctx.fillText(handedness, keypoints[0].x, keypoints[0].y - 10);
+  }
 }
 
-function classifyGesture(hands) {
-  if (!hands || hands.length === 0) return { gesture: 'No Hand', confidence: 0 };
-  if (hands.length === 2) return classifyTwoHandGesture(hands);
-  return classifySingleHandGesture(hands[0].keypoints);
-}
-
-// --- Drawing functions ---
-
-// Draw hands with scaled and mirrored coordinates
-function drawHands(hands, ctx, scaleX, scaleY, videoWidth) {
-  if (!hands || hands.length === 0) return;
-
-  hands.forEach(hand => {
-    const isLeftHand = hand.handedness === 'Left';
-    const landmarks = hand.keypoints;
-
-    // Use a bright, visible color
-    ctx.fillStyle = 'yellow';
-
-    landmarks.forEach((point, index) => {
-      // Calculate drawing coordinates with mirroring
-      const drawX = (point.x) * scaleX;
-      const drawY = point.y * scaleY;
-
-      // Log coordinates for debugging
-      console.log(`Landmark ${index}: drawX=${drawX}, drawY=${drawY}`);
-
-      // Draw a larger square instead of a circle for visibility
-      ctx.fillRect(drawX - 5, drawY - 5, 10, 10);
-    });
-
-    // Draw connections (optional, for debugging)
-    ctx.strokeStyle = 'red';
-    ctx.lineWidth = 2;
-    HAND_CONNECTIONS.forEach(([startIdx, endIdx]) => {
-      const start = landmarks[startIdx];
-      const end = landmarks[endIdx];
-      const startDrawX = (videoWidth - start.x) * scaleX;
-      const startDrawY = start.y * scaleY;
-      const endDrawX = (videoWidth - end.x) * scaleX;
-      const endDrawY = end.y * scaleY;
-      ctx.beginPath();
-      ctx.moveTo(startDrawX, startDrawY);
-      ctx.lineTo(endDrawX, endDrawY);
-      ctx.stroke();
-    });
-  });
-}
-// --- Main application logic ---
-
-let detector = null;
+// Global variables to manage detection state
+let detectionRunning = false;
+let animationFrameId = null;
 let webcamStream = null;
-// let isDetecting = false;
 
-async function setup() {
-  await tf.setBackend('webgl');
-  detector = await handPoseDetection.createDetector(
-    handPoseDetection.SupportedModels.MediaPipeHands,
-    {
-      runtime: 'tfjs',
-      modelType: 'full',
-      maxHands: 2
-    }
-  ).then(det => {
-    console.log('Detector created successfully');
-    return det;
-  }).catch(err => {
-    console.error('Error creating detector:', err);
-    throw err;
-  });
+function stopWebcam() {
+  if (webcamStream) {
+    webcamStream.getTracks().forEach(track => track.stop());
+    webcamStream = null;
+    const video = document.getElementById("webcam");
+    video.srcObject = null;
+  }
 }
 
-async function enableWebcam() {
-  const webcamElement = document.getElementById('webcam');
-  const gestureOutput = document.getElementById('gesture_output');
-  const handCountOutput = document.getElementById('hand_count_output');
-  const canvasElement = document.getElementById('output_canvas');
-  canvasElement.width = 320;
-  canvasElement.height = 240;
-  const ctx = canvasElement.getContext('2d');
+function updateButtonStates(webcamEnabled, detectionActive) {
+  const webcamButton = document.getElementById("webcamButton");
+  const startButton = document.getElementById("startDetectionButton");
+  const stopButton = document.getElementById("stopDetectionButton");
+  const disableButton = document.getElementById("disableWebcamButton");
 
-  try {
-    webcamStream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 320, height: 240, facingMode: 'user' }
-    });
-    webcamElement.srcObject = webcamStream;
-    await webcamElement.play();
-    gestureOutput.textContent = 'Webcam enabled. Loading model...';
-    await setup();
-    gestureOutput.textContent = 'Model loaded. Detecting gestures...';
-    isDetecting = true;
-    detectHands();
-  } catch (err) {
-    gestureOutput.textContent = 'Error accessing webcam: ' + err.message;
+  if (webcamEnabled) {
+    webcamButton.disabled = true;
+    webcamButton.textContent = "Webcam Enabled";
+    disableButton.disabled = false;
+    disableButton.textContent = "Disable Webcam";
+    
+    if (detectionActive) {
+      startButton.disabled = true;
+      stopButton.disabled = false;
+    } else {
+      startButton.disabled = false;
+      stopButton.disabled = true;
+    }
+  } else {
+    webcamButton.disabled = false;
+    webcamButton.textContent = "Enable Webcam";
+    disableButton.disabled = true;
+    disableButton.textContent = "Disable Webcam";
+    startButton.disabled = true;
+    stopButton.disabled = true;
   }
+}
 
-  async function detectHands() {
-    if (!isDetecting) return;
+async function main() {
+  const webcamButton = document.getElementById("webcamButton");
+  const startDetectionButton = document.getElementById("startDetectionButton");
+  const stopDetectionButton = document.getElementById("stopDetectionButton");
+  const disableWebcamButton = document.getElementById("disableWebcamButton");
+  const gestureOutput = document.getElementById("gesture_output");
+  const handCountOutput = document.getElementById("hand_count_output");
+  
+  gestureOutput.textContent = "Model Loading...";
+  handCountOutput.textContent = "Hands detected: 0";
+
+  let video = null;
+  let detector = null;
+  let canvas = null;
+  let ctx = null;
+
+  // Initialize button states
+  updateButtonStates(false, false);
+
+  webcamButton.addEventListener("click", async () => {
+    webcamButton.disabled = true;
+    webcamButton.textContent = "Loading...";
+
+    video = await setupWebcam();
+    if (!video) {
+      updateButtonStates(false, false);
+      return;
+    }
+
+    // Store the stream reference for cleanup
+    webcamStream = video.srcObject;
+
+    detector = await loadHandPoseModel();
+    if (!detector) {
+      stopWebcam();
+      updateButtonStates(false, false);
+      return;
+    }
+
+    canvas = document.getElementById("output_canvas");
+    ctx = canvas.getContext("2d");
+
+    updateButtonStates(true, false);
+    gestureOutput.textContent = "Webcam ready - Click 'Start Detection' to begin";
+  });
+
+  startDetectionButton.addEventListener("click", () => {
+    if (!video || !detector) return;
+    
+    detectionRunning = true;
+    updateButtonStates(true, true);
+    
+    async function detectHands() {
+      if (!detectionRunning) return;
+      
+      const hands = await detector.estimateHands(video);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      if (hands.length > 0) {
+        handCountOutput.textContent = `Hands detected: ${hands.length}`;
+        const gestureTexts = hands.map((hand) => {
+          const result = classifySingleHandGesture(hand.keypoints);
+          drawKeypoints(ctx, hand.keypoints, hand.handedness);
+          return result
+            ? `${hand.handedness} hand: ${result.gesture}`
+            : `${hand.handedness} hand: Unknown (0%)`;
+        });
+        gestureOutput.textContent = gestureTexts.join(" | ");
+      } else {
+        handCountOutput.textContent = "Hands detected: 0";
+        gestureOutput.textContent = "No gestures detected";
+      }
+
+      animationFrameId = requestAnimationFrame(detectHands);
+    }
+
+    detectHands();
+  });
+
+  stopDetectionButton.addEventListener("click", () => {
+    detectionRunning = false;
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    
+    updateButtonStates(true, false);
+    gestureOutput.textContent = "Detection stopped";
+    handCountOutput.textContent = "Hands detected: 0";
     
     // Clear the canvas
-    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      // Calculate scaling factors
-    const videoWidth = webcamElement.videoWidth;
-    const videoHeight = webcamElement.videoHeight;
-    const canvasWidth = canvasElement.width; // 320
-    const canvasHeight = canvasElement.height; // 240
-    const scaleX = canvasWidth / videoWidth;
-    const scaleY = canvasHeight / videoHeight;
-    // Test canvas rendering
-    // ctx.fillStyle = 'red';
-    // ctx.beginPath();
-    // ctx.arc(100, 100, 5, 0, 2 * Math.PI);
-    // ctx.fill();
-
-    try {
-      const hands = await detector.estimateHands(webcamElement, { flipHorizontal: false });
-      console.log('Hands detected:', hands.length);
-      if (hands.length > 0) {
-        console.log('First hand landmarks:', hands[0].keypoints);
+    if (ctx && canvas) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (video) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       }
-      drawHands(hands, ctx, scaleX, scaleY, videoWidth);
-      if (handCountOutput) {
-        handCountOutput.textContent = `Hands detected: ${hands.length}`;
-      }
-      const gestureResult = classifyGesture(hands);
-      if (gestureResult && gestureResult.confidence > 0.7) {
-        gestureOutput.textContent = `Detected: ${gestureResult.gesture}`;
-      } else {
-        gestureOutput.textContent = 'No gesture detected';
-      }
-    } catch (err) {
-      gestureOutput.textContent = 'Detection error: ' + err.message;
-      console.error('Detection error:', err);
     }
+  });
 
-    requestAnimationFrame(detectHands);
-  }
+  disableWebcamButton.addEventListener("click", () => {
+    // Stop detection first
+    detectionRunning = false;
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    
+    // Stop webcam
+    stopWebcam();
+    
+    // Clear canvas
+    if (ctx && canvas) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    // Reset variables
+    video = null;
+    detector = null;
+    
+    updateButtonStates(false, false);
+    gestureOutput.textContent = "Webcam disabled";
+    handCountOutput.textContent = "Hands detected: 0";
+  });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('webcamButton').addEventListener('click', async () => {
-    document.getElementById('webcamButton').disabled = true;
-    await enableWebcam();
-  });
-});
+main();
