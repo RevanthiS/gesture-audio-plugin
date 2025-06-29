@@ -2,18 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Gesture Detection</title>
+  <title>Gesture & Audio Detection</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
- 
-
   <link rel="stylesheet" href="style.css">
-
-  
 </head>
 <body>
-  <h1> Hand Gesture Detection</h1>
-
+  <h1>Hand Gesture Detection</h1>
 
   <div class="controls">
     <button id="webcamButton">📷 Enable Webcam</button>
@@ -27,28 +21,43 @@
     <canvas id="output_canvas" width="320" height="240"></canvas>
   </div>
 
-
   <div class="output-section">
     <div class="output-item">
       <h3>Hands Detected</h3>
       <div id="hand_count_output">Hands detected: 0</div>
     </div>
     <div class="output-item">
-      <h3> Gesture Recognition</h3>
+      <h3>Gesture Recognition</h3>
       <div id="gesture_output">Model Loading...</div>
-     
     </div>
   </div>
 
- 
+  <hr style="width:100%; margin: 20px 0;">
+  <h1>Speech Recognition</h1>
+
+  <div class="controls">
+    <label for="language-select" style="margin-right: 10px;">Recognition Language:</label>
+    <select id="language-select">
+      <option value="en-US">English (US)</option>
+    </select>
+  </div>
+
+  <div class="controls">
+      <button id="startAudioButton">🎤 Start Listening</button>
+      <button id="stopAudioButton" disabled>🤫 Stop Listening</button>
+      <button id="saveTranscriptButton">💾 Save Transcript</button>
+  </div>
+  <div class="output-section">
+      <div class="output-item">
+          <h3>Live Transcript</h3>
+          <div id="audio_output">Transcript will appear here...</div>
+      </div>
+  </div>
+
   <script src="libs/tfjs-core.js"></script>
   <script src="libs/tfjs-converter.js"></script>
   <script src="libs/tfjs-backend-webgl.js"></script>
-
-
   <script src="libs/hand-pose-detection.js"></script>
-
-  
   <script src="content.js"></script>
 </body>
 </html>
