@@ -5,10 +5,9 @@
     "permissions": ["scripting"],
     "host_permissions": ["<all_urls>"],
     "action": {
-  "default_title": " Gesture detection Plugin"
-    }
-     ,
+        "default_title": " Gesture detection Plugin"
+    },
     "background": {
       "service_worker": "background.js"
     }
-  }
+}
