@@ -8,9 +8,10 @@ let lastChar = "";
 let sameCharCount = 0;
 const stableThreshold = 15;
 let lastAcceptedTime = 0;
-const delayBetweenChars = 2000;
+const delayBetweenChars = 1000;
 
 let progressInterval;
+let isWebcamOn = false;
 let isDetectionRunning = false;
 let detector;
 let video;
@@ -23,44 +24,44 @@ let recognition;
 let fullTranscript = '';
 let isListening = false;
 
+// UI Elements
+const loadingOverlay = document.getElementById('loading-overlay');
+const themeToggle = document.getElementById('theme-toggle');
+
 //Enumerate All Video Input Devices (Cameras)
 async function getCameras() {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const videoDevices = devices.filter(device => device.kind === 'videoinput');
-  
-  const select = document.getElementById('cameraSelect');
-  select.innerHTML = ''; // Clear old options
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    
+    const select = document.getElementById('cameraSelect');
+    select.innerHTML = ''; // Clear old options
 
-  videoDevices.forEach((device, index) => {
-    const option = document.createElement('option');
-    option.value = device.deviceId;
-    option.text = device.label || `Camera ${index + 1}`;
-    select.appendChild(option);
-  });
-}
-
-//Start the Camera Based on User Selection
-async function startCamera() {
-  const deviceId = document.getElementById('cameraSelect').value;
-
-  const constraints = {
-    video: {
-      deviceId: { exact: deviceId }
+    if (videoDevices.length === 0) {
+      select.innerHTML = '<option>No cameras found</option>';
+      return;
     }
-  };
 
-  const stream = await navigator.mediaDevices.getUserMedia(constraints);
-  const video = document.getElementById('video');
-  video.srcObject = stream;
+    videoDevices.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.text = device.label || `Camera ${index + 1}`;
+      select.appendChild(option);
+    });
+  } catch (err) {
+    console.error("Error enumerating devices:", err);
+  }
 }
 
 window.onload = async () => {
   await getCameras();
+  applySavedTheme(); // Apply theme on load
 };
 
 //for a time delay of 2 sec between every char
 function updateProgressBar() {
   const bar = document.getElementById("progress_bar");
+  if (!bar) return;
   const elapsed = Date.now() - lastAcceptedTime;
   const percent = Math.min((elapsed / delayBetweenChars) * 100, 100);
   bar.style.width = percent + "%";
@@ -109,14 +110,20 @@ async function loadGraphModel() {
 
 async function setupWebcam() {
   video = document.getElementById("webcam");
+  const deviceId = document.getElementById('cameraSelect').value;
+  const constraints = {
+    video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" }
+  };
+
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     video.srcObject = stream;
     return new Promise(resolve => {
       video.onloadedmetadata = () => resolve(video);
     });
   } catch (err) {
     console.error("Error accessing webcam:", err);
+    alert("Could not access webcam. Please check permissions.");
     return null;
   }
 }
@@ -142,7 +149,7 @@ async function predictFromHand(video, keypoints) {
     let xMin = Math.min(...xs), xMax = Math.max(...xs);
     let yMin = Math.min(...ys), yMax = Math.max(...ys);
 
-    const pad = Math.max(xMax - xMin, yMax - yMin) * 0.2;
+    const pad = Math.max(xMax - xMin, yMax - yMin) * 0.3;
     xMin = Math.max(0, xMin - pad);
     yMin = Math.max(0, yMin - pad);
     xMax = Math.min(video.videoWidth, xMax + pad);
@@ -153,11 +160,9 @@ async function predictFromHand(video, keypoints) {
     const ctx = off.getContext("2d");
     ctx.drawImage(video, xMin, yMin, xMax - xMin, yMax - yMin, 0, 0, 224, 224);
 
-    // Optional debug display
     const debug = document.getElementById("model_input_canvas");
     if (debug) debug.getContext("2d").drawImage(off, 0, 0);
 
-    // Use tf.tidy to manage memory
     const result = await tf.tidy(() => {
       let input = tf.browser.fromPixels(off);
       input = tf.cast(input, 'float32');
@@ -181,58 +186,65 @@ async function predictFromHand(video, keypoints) {
 }
 
 async function detectHands() {
-  if (!isDetectionRunning) return;
+  if (!isDetectionRunning || !isWebcamOn) return;
 
   const hands = await detector.estimateHands(video);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
   const now = Date.now();
-  const handCountOutput = document.getElementById("hand_count_output");
   const gestureOutput = document.getElementById("gesture_output");
   const sentenceOutput = document.getElementById("sentence_output");
 
-  if (hands.length) {
-    handCountOutput.textContent = `Hands detected: ${hands.length}`;
+  if (hands.length > 0) {
     const result = await predictFromHand(video, hands[0].keypoints);
-    gestureOutput.textContent = `Prediction: ${result.label} (${(result.confidence * 100).toFixed(1)}%)`;
+    gestureOutput.textContent = `${result.label} (${(result.confidence * 100).toFixed(1)}%)`;
 
     const label = result.label;
     const labelIndex = result.index;
 
-    if (now - lastAcceptedTime < delayBetweenChars) {
-      requestAnimationFrame(detectHands);
-      return;
-    }
+// Step 1: Manage the stability counter for the currently held gesture.
+if (label === lastChar) {
+  sameCharCount++; // If the gesture is the same, increment its stability count.
+} else {
+  lastChar = label;
+  sameCharCount = 1; // If it's a new gesture, reset the count to 1.
+}
 
-    if (label === lastChar) {
-      sameCharCount++;
-      if (sameCharCount === stableThreshold) {
-        if (labelIndex === 27) {
-          sentence += " ";
-        } else if (labelIndex === 26) {
-          sentence = sentence.slice(0, -1);
-        } else if (labelIndex >= 0 && labelIndex <= 25) {
-          sentence += label;
-        }
-        sentenceOutput.textContent = "Sentence: " + sentence;
-        sameCharCount = 0;
-        lastAcceptedTime = now;
-        updateProgressBar();
-      }
-    } else {
-      lastChar = label;
-      sameCharCount = 1;
-    }
+// Step 2: Check if the gesture is stable AND the 2-second cooldown has passed.
+if (sameCharCount >= stableThreshold && (now - lastAcceptedTime > delayBetweenChars)) {
+  
+  // Clear the initial placeholder text if it exists.
+  if (sentence === "Your sentence will be built here...") sentence = "";
+  
+  // Determine the correct label for "DELETE" and "SPACE" based on the labels.txt file
+  const deleteLabel = "DELETE";
+  const spaceLabel = "SPACE";
+
+  // Step 3: Perform the action based on the stable gesture.
+  if (label === spaceLabel) { // Action for "space"
+    sentence += " ";
+  } else if (label === deleteLabel) { // Action for "delete"
+    sentence = sentence.slice(0, -1);
+  } else if (label !== 'NOTHING') { // Action for letters, ignoring "NOTHING" gesture
+    sentence += label;
+  }
+
+  // Update the UI and reset timers for the next character.
+  sentenceOutput.textContent = sentence.length > 0 ? sentence : "Your sentence will be built here...";
+  lastAcceptedTime = now;
+  updateProgressBar();
+  
+  // Immediately reset the counter after an action to prevent rapid-fire repeats.
+  sameCharCount = 0; 
+}
   } else {
-    handCountOutput.textContent = "Hands detected: 0";
     gestureOutput.textContent = "No gesture detected";
   }
 
   requestAnimationFrame(detectHands);
 }
 
-// Initialize Speech Recognition
 function initializeSpeechRecognition() {
   if (SpeechRecognition) {
     recognition = new SpeechRecognition();
@@ -243,11 +255,8 @@ function initializeSpeechRecognition() {
     recognition.onresult = (event) => {
       const audioOutput = document.getElementById("audio_output");
       let interimTranscript = '';
-      let finalTranscript = '';
-
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
           fullTranscript += event.results[i][0].transcript + ' ';
         } else {
           interimTranscript += event.results[i][0].transcript;
@@ -263,7 +272,6 @@ function initializeSpeechRecognition() {
     };
 
     recognition.onend = () => {
-      console.log("Recognition session ended");
       isListening = false;
       updateAudioButtons();
     };
@@ -273,31 +281,69 @@ function initializeSpeechRecognition() {
   }
 }
 
-function updateWebcamButtons() {
-  const webcamButton = document.getElementById("webcamButton");
-  const startDetectionButton = document.getElementById("startDetectionButton");
-  const stopDetectionButton = document.getElementById("stopDetectionButton");
-  const disableWebcamButton = document.getElementById("disableWebcamButton");
+function updateControlButtons() {
+    const webcamButton = document.getElementById("webcamButton");
+    const detectionButton = document.getElementById("detectionButton");
+    const cameraSelect = document.getElementById("cameraSelect");
+    const webcamStatus = document.getElementById("webcam-status");
+    const detectionStatus = document.getElementById("detection-status");
 
-  if (video && video.srcObject) {
-    webcamButton.disabled = true;
-    startDetectionButton.disabled = isDetectionRunning;
-    stopDetectionButton.disabled = !isDetectionRunning;
-    disableWebcamButton.disabled = false;
-  } else {
-    webcamButton.disabled = false;
-    startDetectionButton.disabled = true;
-    stopDetectionButton.disabled = true;
-    disableWebcamButton.disabled = true;
-  }
+    // Webcam Button State
+    if (isWebcamOn) {
+        webcamButton.innerHTML = "🚫 Disable Webcam";
+        webcamButton.classList.add("active");
+        cameraSelect.disabled = true;
+    } else {
+        webcamButton.innerHTML = "📷 Enable Webcam";
+        webcamButton.classList.remove("active");
+        cameraSelect.disabled = false;
+    }
+    webcamStatus.classList.toggle('active', isWebcamOn);
+
+    // Detection Button State
+    detectionButton.disabled = !isWebcamOn;
+    detectionStatus.classList.toggle('active', isDetectionRunning && isWebcamOn);
+    if (isDetectionRunning) {
+        detectionButton.innerHTML = "⏹️ Stop Detection";
+        detectionButton.classList.add("active");
+    } else {
+        detectionButton.innerHTML = "▶️ Start Detection";
+        detectionButton.classList.remove("active");
+    }
 }
 
 function updateAudioButtons() {
   const startAudioButton = document.getElementById("startAudioButton");
   const stopAudioButton = document.getElementById("stopAudioButton");
+  const listeningStatus = document.getElementById('listening-status');
   
   startAudioButton.disabled = isListening;
   stopAudioButton.disabled = !isListening;
+  listeningStatus.classList.toggle('active', isListening);
+}
+
+// Theme management functions
+function applySavedTheme() {
+  const savedTheme = localStorage.getItem('theme');
+  if (savedTheme === 'dark') {
+    document.body.classList.add('dark-theme');
+    themeToggle.textContent = '🌙'; // Moon icon for dark theme
+  } else {
+    document.body.classList.remove('dark-theme');
+    themeToggle.textContent = '☀️'; // Sun icon for light theme
+  }
+}
+
+function toggleTheme() {
+  if (document.body.classList.contains('dark-theme')) {
+    document.body.classList.remove('dark-theme');
+    localStorage.setItem('theme', 'light');
+    themeToggle.textContent = '☀️';
+  } else {
+    document.body.classList.add('dark-theme');
+    localStorage.setItem('theme', 'dark');
+    themeToggle.textContent = '🌙';
+  }
 }
 
 async function main() {
@@ -313,70 +359,95 @@ async function main() {
 
     detector = await loadHandPoseModel();
     
-    // Initialize speech recognition
     initializeSpeechRecognition();
-
-    // Set up button event listeners
     setupEventListeners();
+    updateControlButtons();
+    updateAudioButtons();
+    applySavedTheme(); // Ensure theme is applied after all elements are loaded
 
     console.log("✅ Application initialized successfully");
-    document.getElementById("gesture_output").textContent = "Ready to detect gestures";
+    document.getElementById("gesture_output").textContent = "Ready";
+    loadingOverlay.style.opacity = '0';
+    setTimeout(() => { loadingOverlay.style.display = 'none'; }, 300);
     
   } catch (error) {
     console.error("App error:", error);
-    document.getElementById("gesture_output").textContent = "Initialization error: " + error.message;
+    loadingOverlay.innerHTML = `<p style="color:red;">Initialization Error: ${error.message}</p>`;
   }
 }
 
 function setupEventListeners() {
-  // Webcam control buttons
   document.getElementById("webcamButton")?.addEventListener("click", async () => {
-    const videoElement = await setupWebcam();
-    if (videoElement) {
-      updateWebcamButtons();
+    if (!isWebcamOn) {
+      const videoElement = await setupWebcam();
+      if (videoElement) {
+        isWebcamOn = true;
+        if (!progressInterval) {
+          progressInterval = setInterval(updateProgressBar, 100);
+        }
+      }
+    } else {
+      if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+      }
+      isWebcamOn = false;
+      isDetectionRunning = false;
       
-      if (!progressInterval) {
-        progressInterval = setInterval(updateProgressBar, 100);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      document.getElementById("gesture_output").textContent = "Inactive";
+
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
       }
     }
+    updateControlButtons();
   });
 
-  document.getElementById("startDetectionButton")?.addEventListener("click", () => {
-    isDetectionRunning = true;
-    updateWebcamButtons();
-    detectHands();
-  });
-
-  document.getElementById("stopDetectionButton")?.addEventListener("click", () => {
-    isDetectionRunning = false;
-    updateWebcamButtons();
-  });
-
-  document.getElementById("disableWebcamButton")?.addEventListener("click", () => {
-    if (video && video.srcObject) {
-      video.srcObject.getTracks().forEach(track => track.stop());
-      video.srcObject = null;
+  document.getElementById("detectionButton")?.addEventListener("click", () => {
+    if (!isWebcamOn) return; 
+    isDetectionRunning = !isDetectionRunning;
+    if (isDetectionRunning) {
+      detectHands();
     }
-    isDetectionRunning = false;
-    updateWebcamButtons();
-    
-    if (progressInterval) {
-      clearInterval(progressInterval);
-      progressInterval = null;
-    }
+    updateControlButtons();
   });
 
-  // Gesture sentence speak button
   document.getElementById("speakButton")?.addEventListener("click", () => {
-    if (sentence.length > 0) {
-      const utterance = new SpeechSynthesisUtterance(sentence);
+    const textToSpeak = document.getElementById("sentence_output").textContent;
+    if (textToSpeak.length > 0 && textToSpeak !== "Your sentence will be built here...") {
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
       utterance.lang = "en-US";
       utterance.rate = 1;
       window.speechSynthesis.speak(utterance);
     }
   });
 
-  // Speech recognition buttons
+  document.getElementById("clearSentenceButton")?.addEventListener("click", () => {
+    sentence = "";
+    lastChar = "";
+    sameCharCount = 0;
+    lastAcceptedTime = 0; // Reset delay timer
+    document.getElementById("sentence_output").textContent = "Your sentence will be built here...";
+    document.getElementById("progress_bar").style.width = "0%";
+  });
+
+  // New Save Gesture Transcript Button
+  document.getElementById("saveGestureTranscriptButton")?.addEventListener("click", () => {
+    if (sentence.trim() && sentence !== "Your sentence will be built here...") {
+      const blob = new Blob([sentence], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gesture_transcript_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      alert("No gesture transcript to save!");
+    }
+  });
+
   document.getElementById("startAudioButton")?.addEventListener("click", () => {
     if (recognition) {
       recognition.lang = document.getElementById("language-select").value;
@@ -389,7 +460,7 @@ function setupEventListeners() {
   document.getElementById("stopAudioButton")?.addEventListener("click", () => {
     if (recognition) {
       recognition.stop();
-      isListening = false;
+      isListening = false; // onend will also set this, but we do it here for immediate UI feedback
       updateAudioButtons();
     }
   });
@@ -413,12 +484,18 @@ function setupEventListeners() {
     document.getElementById("audio_output").textContent = "Transcript will appear here...";
   });
 
-  // Language selection change
   document.getElementById("language-select")?.addEventListener("change", (e) => {
     if (recognition) {
       recognition.lang = e.target.value;
+      if (isListening) {
+          recognition.stop();
+          recognition.start();
+      }
     }
   });
+
+  // Event listener for the theme toggle button
+  themeToggle?.addEventListener('click', toggleTheme);
 }
 
 if (document.readyState === 'loading') {

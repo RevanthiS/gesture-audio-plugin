@@ -2,104 +2,126 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Gesture & Audio Detection</title>
+  <title>HAND GESTURE RECOGNITION</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Hand Gesture Detection</h1>
 
-  <div class="controls">
-    <label for="cameraSelect">Select Camera:</label>
-    <select id="cameraSelect"></select>
-    <button id="webcamButton">📷 Enable Webcam</button>
-    <button id="startDetectionButton" disabled>▶️ Start Detection</button>
-    <button id="stopDetectionButton" disabled>⏹️ Stop Detection</button>
-    <button id="disableWebcamButton" disabled>🚫 Disable Webcam</button>
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <p>Loading AI Models...</p>
   </div>
 
-  <div class="main-container">
-    <div class="left-section">
-      <div class="video-container">
-        <video id="webcam" width="320" height="240" autoplay playsinline></video>
-        <canvas id="output_canvas" width="320" height="240"></canvas>
-      </div>
-      
-      <div class="model-input-container">
-        <h3>Model Input (224x224)</h3>
-        <canvas id="model_input_canvas" width="224" height="224"></canvas>
-      </div>
-      
-      <div id="progress_container">
-        <div id="progress_bar"></div>
-      </div>
-    </div>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>GESTURE RECOGNITION AND SPEECH TO TEXT</h1>
+      <button id="theme-toggle" class="theme-toggle" title="Toggle theme">
+        ☀️
+      </button>
+    </header>
 
-    <div class="right-section">
-      <div class="output-section">
-        <div class="output-item">
-          <h3>Hands Detected</h3>
-          <div id="hand_count_output">Hands detected: 0</div>
-        </div>
+    <main>
+      <section id="gesture-section" class="card">
+        <h2 class="section-title">Hand Gesture Recognition</h2>
         
-        <div class="output-item">
-          <h3>Gesture Recognition</h3>
-          <div id="gesture_output">Model Loading...</div>
+        <div class="controls-grid">
+          <div class="control-item">
+            <label for="cameraSelect">Camera Source</label>
+            <select id="cameraSelect" title="Select your camera"></select>
+          </div>
+          <div class="control-item">
+            <label>Webcam <span id="webcam-status" class="status-indicator"></span></label>
+            <button id="webcamButton" title="Enable or disable your webcam">📷 Enable Webcam</button>
+          </div>
+          <div class="control-item">
+            <label>Detection <span id="detection-status" class="status-indicator"></span></label>
+            <button id="detectionButton" title="Start or stop gesture detection" disabled>▶️ Start Detection</button>
+          </div>
         </div>
-        
-        <div class="output-item">
-          <h3>Gesture Sentence</h3>
-          <div id="sentence_output">Sentence: </div>
-          <button id="speakButton">🔊 Speak Sentence</button>
+
+        <div class="main-content-grid">
+          <div class="video-area">
+            <div class="video-container">
+              <video id="webcam" width="320" height="240" autoplay playsinline></video>
+              <canvas id="output_canvas" width="320" height="240"></canvas>
+              <div id="model_input_container">
+                <canvas id="model_input_canvas" width="224" height="224"></canvas>
+                <span>Model Input</span>
+              </div>
+            </div>
+          </div>
+          <div class="output-area">
+            <div class="output-item">
+              <h4>Live Gesture</h4>
+              <div id="gesture_output">Inactive</div>
+            </div>
+            <div class="sentence-area output-item">
+                <h4>Recognized Sentence</h4>
+                <div id="sentence_output_container">
+                    <div id="sentence_output">Your sentence will be built here...</div>
+                    <div id="progress_container">
+                        <div id="progress_bar"></div>
+                    </div>
+                </div>
+                <div class="button-group">
+                  <button id="speakButton" title="Read the sentence aloud">🔊 Speak</button>
+                  <button id="clearSentenceButton" title="Clear the recognized sentence">🗑️ Clear</button>
+                  <button id="saveGestureTranscriptButton" title="Save gesture transcript to a file">💾 Save</button> </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      </section>
+
+      <section id="speech-section" class="card">
+        <h2 class="section-title">Speech-to-Text Recognition</h2>
+        <div class="controls-grid speech-controls">
+           <div class="control-item">
+              <label for="language-select">Recognition Language</label>
+              <select id="language-select" title="Select speech recognition language">
+                  <option value="en-US">English (US)</option>
+                  <option value="en-GB">English (UK)</option>
+                  <option value="es-ES">Spanish</option>
+                  <option value="fr-FR">French</option>
+                  <option value="de-DE">German</option>
+                  <option value="it-IT">Italian</option>
+                  <option value="pt-PT">Portuguese</option>
+                  <option value="ru-RU">Russian</option>
+                  <option value="ja-JP">Japanese</option>
+                  <option value="ko-KR">Korean</option>
+                  <option value="zh-CN">Chinese (Simplified)</option>
+                  <option value="hi-IN">Hindi</option>
+              </select>
+            </div>
+            <div class="control-item">
+               <label>Listener <span id="listening-status" class="status-indicator"></span></label>
+               <div class="button-group">
+                 <button id="startAudioButton" title="Start listening for speech">🎤 Start</button>
+                 <button id="stopAudioButton" title="Stop listening" disabled>🤫 Stop</button>
+               </div>
+            </div>
+        </div>
+        <div class="output-item">
+            <h4>Live Transcript</h4>
+            <div id="audio_output">Transcript will appear here...</div>
+        </div>
+        <div class="transcript-actions">
+          <button id="clearTranscriptButton" title="Clear the transcript">🗑️ Clear Transcript</button>
+          <button id="saveTranscriptButton" title="Save transcript to a file">💾 Save Transcript</button>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <hr style="width:100%; margin: 20px 0;">
-  <h1>Speech Recognition</h1>
-
-  <div class="controls">
-    <label for="language-select" style="margin-right: 10px;">Recognition Language:</label>
-    <select id="language-select">
-      <option value="en-US">English (US)</option>
-      <option value="en-GB">English (UK)</option>
-      <option value="es-ES">Spanish</option>
-      <option value="fr-FR">French</option>
-      <option value="de-DE">German</option>
-      <option value="it-IT">Italian</option>
-      <option value="pt-PT">Portuguese</option>
-      <option value="ru-RU">Russian</option>
-      <option value="ja-JP">Japanese</option>
-      <option value="ko-KR">Korean</option>
-      <option value="zh-CN">Chinese (Simplified)</option>
-      <option value="hi-IN">Hindi</option>
-    </select>
-  </div>
-
-  <div class="controls">
-    <button id="startAudioButton">🎤 Start Listening</button>
-    <button id="stopAudioButton" disabled>🤫 Stop Listening</button>
-    <button id="saveTranscriptButton">💾 Save Transcript</button>
-    <button id="clearTranscriptButton">🗑️ Clear Transcript</button>
-  </div>
-
-  <div class="output-section">
-    <div class="output-item">
-      <h3>Live Transcript</h3>
-      <div id="audio_output">Transcript will appear here...</div>
-    </div>
-  </div>
-
-  <!-- Load TensorFlow.js libraries in correct order -->
   <script src="libs/tfjs-core.js"></script>
   <script src="libs/tfjs-converter.js"></script>
   <script src="libs/tfjs-backend-webgl.js"></script>
   
-  <!-- Load Hand Pose Detection Model -->
   <script src="libs/hand-pose-detection.js"></script>
   
-  <!-- Load main gesture logic after all dependencies are loaded -->
   <script type="module" src="content.js"></script>
 </body>
 </html>
